@@ -1,0 +1,5 @@
+config.php
+.installed
+uploads/images/*
+uploads/documents/*
+!uploads/.htaccess
