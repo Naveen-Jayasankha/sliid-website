@@ -36,6 +36,11 @@ async function api(path, options = {}) {
 async function initBackend() {
   try { const cfg = await fetch('api-config.json', {cache:'no-store'}).then(r => r.ok ? r.json() : {}); window.SLIID_API_BASE = cfg.apiBase || ''; }
   catch { window.SLIID_API_BASE = ''; }
+  if (!window.SLIID_API_BASE && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    const distIndex = location.pathname.indexOf('/dist/');
+    const projectRoot = distIndex >= 0 ? location.pathname.slice(0, distIndex) : '';
+    window.SLIID_API_BASE = `${location.origin}${projectRoot}/backend`;
+  }
   const connected = Boolean(window.SLIID_API_BASE);
   document.documentElement.dataset.backend = connected ? 'connected' : 'pending';
   document.querySelectorAll('[data-backend-form]').forEach(form => {
