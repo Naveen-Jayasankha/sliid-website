@@ -32,3 +32,6 @@
     padding:14px 16px!important;
   }
 }
+
+/* Give the directory filters a little breathing room at both page edges. */
+.filter-bar{padding-left:16px;padding-right:16px}
