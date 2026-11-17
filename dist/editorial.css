@@ -9,18 +9,26 @@
 @media(max-width:900px){.topbar{height:76px}.mainnav{top:76px;margin-right:0}.mainnav .mobile-join{display:block;background:var(--gold);color:#fff;padding:14px 16px;border:0;margin-top:8px}.brand-name small{font-size:8px}.footer-grid{grid-template-columns:1fr 1fr}.council-grid{grid-template-columns:1fr}.join-btn{display:none}}
 @media(max-width:560px){.wordmark .brand-emblem{display:block!important}.wordmark .brand-name{display:flex!important}.wordmark .brand-name small{display:block}.brand-emblem img{width:44px;height:44px}.brand-name strong{font-size:29px}.brand-name small{font-size:7px}.home-banner img{aspect-ratio:2048/788;min-height:0;object-fit:contain}.facts .fact{margin-left:0!important}.footer-grid{grid-template-columns:1fr}.footer-mark .brand-name small{display:block}.footer-languages{flex-direction:column;gap:8px}}
 
-/* Mobile navigation spacing fix */
-@media (max-width: 900px) {
-    .mainnav {
-        gap: 0;
-        padding: 10px 24px 20px;
-        font-size: 14px;
-    }
-    .mainnav a {
-        padding: 14px 0;
-    }
-    .mainnav .mobile-join {
-        margin-top: 15px;
-        padding: 14px 16px;
-    }
+/* Keep the opened mobile navigation compact. These rules stay last so the
+   desktop spacing declarations above cannot stretch the mobile menu. */
+@media(max-width:900px){
+  .mainnav,.mainnav.open{
+    height:auto!important;
+    min-height:0!important;
+    max-height:calc(100dvh - 76px);
+    padding:10px 24px 18px;
+    gap:0!important;
+    justify-content:flex-start!important;
+    align-content:flex-start!important;
+    overflow-y:auto;
+  }
+  .mainnav a{
+    flex:0 0 auto!important;
+    margin:0!important;
+    padding:12px 0!important;
+  }
+  .mainnav .mobile-join{
+    margin-top:8px!important;
+    padding:14px 16px!important;
+  }
 }
