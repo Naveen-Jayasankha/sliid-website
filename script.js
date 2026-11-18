@@ -66,10 +66,22 @@ async function initBackend() {
     });
   }
   if (!connected) return;
+  if (current === 'home') loadHomeEventHighlights();
   if (current === 'directory') initDirectory();
   if (current === 'news') loadNews();
   if (current === 'events') loadEvents();
   if (current === 'publications') loadPublications();
+}
+async function loadHomeEventHighlights() {
+  const grid=document.querySelector('[data-home-event-highlights]');if(!grid)return;
+  try {
+    const [upcoming,recent]=await Promise.all([api('events&limit=3'),api('events&past=1&limit=3')]);
+    const selected=[...upcoming.data.map(item=>({...item,event_type:'Upcoming event'})),...recent.data.map(item=>({...item,event_type:'Recent highlight'}))].slice(0,3);
+    if(!selected.length){grid.innerHTML='<div class="home-event-loading"><span>More to come</span><p>New SLIID events and professional programmes will be announced here.</p><a href="events.html">Visit events →</a></div>';return;}
+    grid.innerHTML=selected.map((item,index)=>`<article class="home-event-card${index===0?' featured':''}">${item.image_url?`<div class="home-event-image"><img src="${esc(item.image_url)}" alt="${esc(item.title)}"></div>`:'<div class="home-event-image home-event-fallback" aria-hidden="true">SLIID</div>'}<div class="home-event-content"><span class="home-event-type">${esc(item.event_type)}</span><p class="home-event-date">${esc(date(item.starts_at))}${item.venue?` · ${esc(item.venue)}`:''}</p><h3>${esc(item.title)}</h3>${item.summary?`<p class="home-event-summary">${esc(item.summary)}</p>`:''}<a href="events.html">View highlight →</a></div></article>`).join('');
+  } catch(error) {
+    grid.innerHTML=`<div class="home-event-loading"><span>Event highlights</span><p>${esc(error.message)}</p><a href="events.html">Visit events →</a></div>`;
+  }
 }
 async function initDirectory() {
   const form = document.querySelector('.filter-bar'); const grid = document.querySelector('.member-grid'); if (!form || !grid) return;
