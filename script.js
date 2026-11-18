@@ -80,6 +80,22 @@ async function initDirectory() {
   form.addEventListener('submit', event => { event.preventDefault(); load(); }); load();
 }
 async function loadNews() { const grid=document.querySelector('.news-grid'); if(!grid)return; try{const result=await api('news&limit=12');if(result.data.length)grid.innerHTML=result.data.map(item=>`<article class="card">${item.image_url?`<img class="card-img" src="${esc(item.image_url)}" alt="">`:''}<div class="card-body"><span class="meta">${esc(item.category)} · ${esc(date(item.published_at))}</span><h3>${esc(item.title)}</h3><p>${esc(item.excerpt||'')}</p></div></article>`).join('');}catch{} }
-async function loadEvents() { const grid=document.querySelector('[data-events-grid]'); if(!grid)return; try{const result=await api('events&limit=12');if(result.data.length)grid.innerHTML=result.data.map(item=>`<article class="card">${item.image_url?`<img class="card-img" src="${esc(item.image_url)}" alt="">`:''}<div class="card-body"><span class="meta">Event</span><h3>${esc(item.title)}</h3><p>${esc(date(item.starts_at))} · ${esc(item.venue||'Venue to be confirmed')}</p>${item.registration_url?`<a class="text-link" href="${esc(item.registration_url)}" target="_blank" rel="noopener">Register →</a>`:''}</div></article>`).join('');}catch{} }
+const eventCard = (item, isPast = false) => `<article class="card">${item.image_url?`<img class="card-img" src="${esc(item.image_url)}" alt="">`:''}<div class="card-body"><span class="meta">${isPast?'Past event':'Upcoming event'}</span><h3>${esc(item.title)}</h3><p>${esc(date(item.starts_at))} · ${esc(item.venue||'Venue to be confirmed')}</p>${!isPast&&item.registration_url?`<a class="text-link" href="${esc(item.registration_url)}" target="_blank" rel="noopener">Register →</a>`:''}</div></article>`;
+async function loadEvents() {
+  const upcomingGrid=document.querySelector('[data-events-grid]');
+  const pastGrid=document.querySelector('[data-past-events-grid]');
+  if(upcomingGrid) try {
+    const result=await api('events&limit=12');
+    if(result.data.length) upcomingGrid.innerHTML=result.data.map(item=>eventCard(item)).join('');
+  } catch(error) {
+    upcomingGrid.innerHTML=`<div class="empty-state"><h3>Events unavailable</h3><p>${esc(error.message)}</p></div>`;
+  }
+  if(pastGrid) try {
+    const result=await api('events&past=1&limit=12');
+    if(result.data.length) pastGrid.innerHTML=result.data.map(item=>eventCard(item,true)).join('');
+  } catch(error) {
+    pastGrid.innerHTML=`<div class="empty-state"><h3>Event archive unavailable</h3><p>${esc(error.message)}</p></div>`;
+  }
+}
 async function loadPublications() { const grid=document.querySelector('[data-publications-grid]'); if(!grid)return; try{const result=await api('publications&limit=30');if(result.data.length)grid.innerHTML=result.data.map(item=>`<article class="card"><div class="card-body"><span class="meta">${esc(item.category)}</span><h3>${esc(item.title)}</h3><p>${esc(item.description||'')}</p>${item.file_url||item.external_url?`<a class="text-link" href="${esc(item.file_url||item.external_url)}" target="_blank" rel="noopener">Open publication →</a>`:''}</div></article>`).join('');}catch{} }
 initBackend();
