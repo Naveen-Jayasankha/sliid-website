@@ -85,10 +85,19 @@ async function loadNews() { const grid=document.querySelector('.news-grid'); if(
 const eventCard = (item, isPast = false) => `<article class="card">${item.image_url?`<img class="card-img" src="${esc(item.image_url)}" alt="">`:''}<div class="card-body"><span class="meta">${isPast?'Past event':'Upcoming event'}</span><h3>${esc(item.title)}</h3><p>${esc(date(item.starts_at))} · ${esc(item.venue||'Venue to be confirmed')}</p>${item.summary?`<p>${esc(item.summary)}</p>`:''}${tagMarkup(item.tags)}${!isPast&&item.registration_url?`<a class="text-link" href="${esc(item.registration_url)}" target="_blank" rel="noopener">Register →</a>`:''}</div></article>`;
 const eventArchiveItem = (item, index) => {
   const images = [item.image_url, ...(item.gallery_images || [])].filter((value, position, all) => value && all.indexOf(value) === position);
-  const media = images.length ? `<div class="event-media"><img class="event-cover" src="${esc(images[0])}" alt="${esc(item.title)}">${images.length > 1 ? `<div class="event-gallery">${images.slice(1).map((image, imageIndex) => `<a href="${esc(image)}" target="_blank" rel="noopener" aria-label="Open ${esc(item.title)} gallery image ${imageIndex + 2}"><img src="${esc(image)}" alt=""></a>`).join('')}</div>` : ''}</div>` : '<div class="event-media event-media-placeholder" aria-hidden="true">SLIID</div>';
+  const media = images.length ? `<div class="event-media" data-event-slider><div class="event-stage"><img class="event-cover" src="${esc(images[0])}" alt="${esc(item.title)}" data-event-cover><button class="gallery-arrow gallery-prev" type="button" aria-label="Previous image" data-gallery-prev>‹</button><button class="gallery-arrow gallery-next" type="button" aria-label="Next image" data-gallery-next>›</button><span class="gallery-count" data-gallery-count>1 / ${images.length}</span></div>${images.length > 1 ? `<div class="event-gallery">${images.slice(1).map((image, imageIndex) => { const hiddenCount=images.length-5; return `<button class="event-thumb${imageIndex > 3 ? ' gallery-hidden' : ''}" type="button" data-gallery-src="${esc(image)}" data-gallery-index="${imageIndex + 1}" aria-label="Show ${esc(item.title)} image ${imageIndex + 2}"><img src="${esc(image)}" alt="">${imageIndex === 3 && hiddenCount > 0 ? `<span class="view-more">View more<small>+${hiddenCount}</small></span>` : ''}</button>`; }).join('')}</div>` : ''}<div class="gallery-data" hidden>${images.map(image => `<span data-gallery-image="${esc(image)}"></span>`).join('')}</div></div>` : '<div class="event-media event-media-placeholder" aria-hidden="true">SLIID</div>';
   const description = esc(item.description || '').replace(/\r?\n/g, '<br>');
   return `<article class="feature-split duo event-feature${index % 2 ? ' reverse' : ''}">${media}<div class="feature-copy"><div class="kicker">${esc(date(item.starts_at))}${item.venue ? ` · ${esc(item.venue)}` : ''}</div><h2>${esc(item.title)}</h2>${item.summary ? `<p class="event-summary">${esc(item.summary)}</p>` : ''}${description ? `<p class="event-description">${description}</p>` : ''}${tagMarkup(item.tags)}</div></article>`;
 };
+function initEventGalleries(root=document) {
+  root.querySelectorAll('[data-event-slider]').forEach(slider => {
+    const images=[...slider.querySelectorAll('[data-gallery-image]')].map(node=>node.dataset.galleryImage);
+    const cover=slider.querySelector('[data-event-cover]');const count=slider.querySelector('[data-gallery-count]');let current=0;
+    const show=index=>{if(!images.length)return;current=(index+images.length)%images.length;cover.src=images[current];count.textContent=`${current+1} / ${images.length}`;slider.querySelectorAll('[data-gallery-index]').forEach(button=>button.classList.toggle('active',Number(button.dataset.galleryIndex)===current));};
+    slider.querySelector('[data-gallery-prev]')?.addEventListener('click',()=>show(current-1));slider.querySelector('[data-gallery-next]')?.addEventListener('click',()=>show(current+1));
+    slider.querySelectorAll('[data-gallery-index]').forEach(button=>button.addEventListener('click',()=>show(Number(button.dataset.galleryIndex))));show(0);
+  });
+}
 function updateEventStructuredData(items) {
   document.querySelector('#dynamic-event-schema')?.remove();
   if (!items.length) return;
@@ -106,7 +115,7 @@ async function loadEvents() {
   }
   if(pastGrid) try {
     const result=await api('events&past=1&limit=12');
-    if(result.data.length) pastGrid.innerHTML=result.data.map(eventArchiveItem).join('');structuredEvents.push(...result.data);
+    if(result.data.length){pastGrid.innerHTML=result.data.map(eventArchiveItem).join('');initEventGalleries(pastGrid);}structuredEvents.push(...result.data);
   } catch(error) {
     pastGrid.innerHTML=`<div class="empty-state"><h3>Event archive unavailable</h3><p>${esc(error.message)}</p></div>`;
   }
