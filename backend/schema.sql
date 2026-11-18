@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS events (
   slug VARCHAR(240) NOT NULL UNIQUE,
   summary TEXT NULL,
   description LONGTEXT NULL,
+  tags VARCHAR(500) NULL,
   venue VARCHAR(220) NULL,
   starts_at DATETIME NOT NULL,
   ends_at DATETIME NULL,
