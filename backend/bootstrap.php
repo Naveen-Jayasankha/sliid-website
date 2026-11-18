@@ -91,6 +91,42 @@ function upload_file(string $field, array $allowed, string $folder): ?string {
     if (!move_uploaded_file($file['tmp_name'], $dir . '/' . $name)) throw new RuntimeException('Upload failed.');
     return 'uploads/' . trim($folder, '/') . '/' . $name;
 }
+function upload_files(string $field, array $allowed, string $folder, int $maximum = 12): array {
+    if (empty($_FILES[$field]['name']) || !is_array($_FILES[$field]['name'])) return [];
+    $uploaded = [];
+    $count = min(count($_FILES[$field]['name']), $maximum);
+    for ($index = 0; $index < $count; $index++) {
+        if ($_FILES[$field]['error'][$index] === UPLOAD_ERR_NO_FILE) continue;
+        $_FILES['__batch_upload'] = [
+            'name' => $_FILES[$field]['name'][$index],
+            'type' => $_FILES[$field]['type'][$index] ?? '',
+            'tmp_name' => $_FILES[$field]['tmp_name'][$index],
+            'error' => $_FILES[$field]['error'][$index],
+            'size' => $_FILES[$field]['size'][$index],
+        ];
+        $path = upload_file('__batch_upload', $allowed, $folder);
+        if ($path) $uploaded[] = $path;
+    }
+    unset($_FILES['__batch_upload']);
+    return $uploaded;
+}
+function ensure_event_images_table(): void {
+    db()->exec("CREATE TABLE IF NOT EXISTS event_images (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        event_id INT UNSIGNED NOT NULL,
+        image_path VARCHAR(255) NOT NULL,
+        sort_order SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_event_images_event (event_id, sort_order),
+        CONSTRAINT fk_event_images_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
+function event_images(int $eventId): array {
+    ensure_event_images_table();
+    $stmt = db()->prepare('SELECT id,image_path,sort_order FROM event_images WHERE event_id=? ORDER BY sort_order,id');
+    $stmt->execute([$eventId]);
+    return $stmt->fetchAll();
+}
 function public_url(?string $path): ?string {
     global $config;
     if (!$path) return null;
