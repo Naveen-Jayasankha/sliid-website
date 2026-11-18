@@ -26,6 +26,8 @@ if (menuButton && navigation) menuButton.addEventListener('click', () => {
 
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
 const date = value => value ? new Intl.DateTimeFormat('en-LK', {day:'numeric',month:'long',year:'numeric'}).format(new Date(value.replace(' ','T'))) : '';
+const tags = value => String(value || '').split(',').map(tag => tag.trim().replace(/^#+/, '')).filter(Boolean);
+const tagMarkup = value => tags(value).length ? `<div class="event-tags">${tags(value).map(tag => `<span>#${esc(tag.replace(/\s+/g, ''))}</span>`).join('')}</div>` : '';
 async function api(path, options = {}) {
   if (!window.SLIID_API_BASE) throw new Error('Online submissions are temporarily unavailable.');
   const response = await fetch(`${window.SLIID_API_BASE.replace(/\/$/, '')}/api.php?resource=${path}`, options);
@@ -80,28 +82,35 @@ async function initDirectory() {
   form.addEventListener('submit', event => { event.preventDefault(); load(); }); load();
 }
 async function loadNews() { const grid=document.querySelector('.news-grid'); if(!grid)return; try{const result=await api('news&limit=12');if(result.data.length)grid.innerHTML=result.data.map(item=>`<article class="card">${item.image_url?`<img class="card-img" src="${esc(item.image_url)}" alt="">`:''}<div class="card-body"><span class="meta">${esc(item.category)} · ${esc(date(item.published_at))}</span><h3>${esc(item.title)}</h3><p>${esc(item.excerpt||'')}</p></div></article>`).join('');}catch{} }
-const eventCard = (item, isPast = false) => `<article class="card">${item.image_url?`<img class="card-img" src="${esc(item.image_url)}" alt="">`:''}<div class="card-body"><span class="meta">${isPast?'Past event':'Upcoming event'}</span><h3>${esc(item.title)}</h3><p>${esc(date(item.starts_at))} · ${esc(item.venue||'Venue to be confirmed')}</p>${!isPast&&item.registration_url?`<a class="text-link" href="${esc(item.registration_url)}" target="_blank" rel="noopener">Register →</a>`:''}</div></article>`;
+const eventCard = (item, isPast = false) => `<article class="card">${item.image_url?`<img class="card-img" src="${esc(item.image_url)}" alt="">`:''}<div class="card-body"><span class="meta">${isPast?'Past event':'Upcoming event'}</span><h3>${esc(item.title)}</h3><p>${esc(date(item.starts_at))} · ${esc(item.venue||'Venue to be confirmed')}</p>${item.summary?`<p>${esc(item.summary)}</p>`:''}${tagMarkup(item.tags)}${!isPast&&item.registration_url?`<a class="text-link" href="${esc(item.registration_url)}" target="_blank" rel="noopener">Register →</a>`:''}</div></article>`;
 const eventArchiveItem = (item, index) => {
   const images = [item.image_url, ...(item.gallery_images || [])].filter((value, position, all) => value && all.indexOf(value) === position);
   const media = images.length ? `<div class="event-media"><img class="event-cover" src="${esc(images[0])}" alt="${esc(item.title)}">${images.length > 1 ? `<div class="event-gallery">${images.slice(1).map((image, imageIndex) => `<a href="${esc(image)}" target="_blank" rel="noopener" aria-label="Open ${esc(item.title)} gallery image ${imageIndex + 2}"><img src="${esc(image)}" alt=""></a>`).join('')}</div>` : ''}</div>` : '<div class="event-media event-media-placeholder" aria-hidden="true">SLIID</div>';
   const description = esc(item.description || '').replace(/\r?\n/g, '<br>');
-  return `<article class="feature-split duo event-feature${index % 2 ? ' reverse' : ''}">${media}<div class="feature-copy"><div class="kicker">${esc(date(item.starts_at))}${item.venue ? ` · ${esc(item.venue)}` : ''}</div><h2>${esc(item.title)}</h2>${item.summary ? `<p class="event-summary">${esc(item.summary)}</p>` : ''}${description ? `<p class="event-description">${description}</p>` : ''}</div></article>`;
+  return `<article class="feature-split duo event-feature${index % 2 ? ' reverse' : ''}">${media}<div class="feature-copy"><div class="kicker">${esc(date(item.starts_at))}${item.venue ? ` · ${esc(item.venue)}` : ''}</div><h2>${esc(item.title)}</h2>${item.summary ? `<p class="event-summary">${esc(item.summary)}</p>` : ''}${description ? `<p class="event-description">${description}</p>` : ''}${tagMarkup(item.tags)}</div></article>`;
 };
+function updateEventStructuredData(items) {
+  document.querySelector('#dynamic-event-schema')?.remove();
+  if (!items.length) return;
+  const schema=document.createElement('script');schema.id='dynamic-event-schema';schema.type='application/ld+json';schema.textContent=JSON.stringify({'@context':'https://schema.org','@type':'ItemList',itemListElement:items.map((item,index)=>({'@type':'ListItem',position:index+1,item:{'@type':'Event',name:item.title,description:item.summary||item.description||'',startDate:item.starts_at,endDate:item.ends_at||undefined,eventStatus:new Date(item.starts_at.replace(' ','T'))<new Date()?'https://schema.org/EventCompleted':'https://schema.org/EventScheduled',location:item.venue?{'@type':'Place',name:item.venue}:undefined,image:[item.image_url,...(item.gallery_images||[])].filter(Boolean),keywords:tags(item.tags).join(', ')}}))});document.head.append(schema);
+}
 async function loadEvents() {
   const upcomingGrid=document.querySelector('[data-events-grid]');
   const pastGrid=document.querySelector('[data-past-events-grid]');
+  const structuredEvents=[];
   if(upcomingGrid) try {
     const result=await api('events&limit=12');
-    if(result.data.length) upcomingGrid.innerHTML=result.data.map(item=>eventCard(item)).join('');
+    if(result.data.length) upcomingGrid.innerHTML=result.data.map(item=>eventCard(item)).join('');structuredEvents.push(...result.data);
   } catch(error) {
     upcomingGrid.innerHTML=`<div class="empty-state"><h3>Events unavailable</h3><p>${esc(error.message)}</p></div>`;
   }
   if(pastGrid) try {
     const result=await api('events&past=1&limit=12');
-    if(result.data.length) pastGrid.innerHTML=result.data.map(eventArchiveItem).join('');
+    if(result.data.length) pastGrid.innerHTML=result.data.map(eventArchiveItem).join('');structuredEvents.push(...result.data);
   } catch(error) {
     pastGrid.innerHTML=`<div class="empty-state"><h3>Event archive unavailable</h3><p>${esc(error.message)}</p></div>`;
   }
+  updateEventStructuredData(structuredEvents);
 }
 async function loadPublications() { const grid=document.querySelector('[data-publications-grid]'); if(!grid)return; try{const result=await api('publications&limit=30');if(result.data.length)grid.innerHTML=result.data.map(item=>`<article class="card"><div class="card-body"><span class="meta">${esc(item.category)}</span><h3>${esc(item.title)}</h3><p>${esc(item.description||'')}</p>${item.file_url||item.external_url?`<a class="text-link" href="${esc(item.file_url||item.external_url)}" target="_blank" rel="noopener">Open publication →</a>`:''}</div></article>`).join('');}catch{} }
 initBackend();
