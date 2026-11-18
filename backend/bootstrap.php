@@ -121,6 +121,10 @@ function ensure_event_images_table(): void {
         CONSTRAINT fk_event_images_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
+function ensure_event_tags_column(): void {
+    $column = db()->query("SHOW COLUMNS FROM events LIKE 'tags'")->fetch();
+    if (!$column) db()->exec("ALTER TABLE events ADD COLUMN tags VARCHAR(500) NULL AFTER description");
+}
 function event_images(int $eventId): array {
     ensure_event_images_table();
     $stmt = db()->prepare('SELECT id,image_path,sort_order FROM event_images WHERE event_id=? ORDER BY sort_order,id');
