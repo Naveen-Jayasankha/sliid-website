@@ -52,6 +52,7 @@ All requests use `api.php?resource=...`.
 Member filters include `q`, `category`, `location`, `page` and `limit`. Events accept `past=1`. News accepts `slug`.
 
 Existing installations are upgraded automatically when the Events admin or API is opened. The upgrade creates the `event_images` table used by event galleries.
+It also adds the optional event `tags` field. Tags are displayed as hashtags and included in Event structured data for search engines.
 
 ## Security
 
