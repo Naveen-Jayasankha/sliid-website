@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://naveen-jayasankha.github.io/sliid-website/sitemap.xml
