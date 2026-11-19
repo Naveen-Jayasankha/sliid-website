@@ -88,6 +88,9 @@ function upload_file(string $field, array $allowed, string $folder): ?string {
     $name = bin2hex(random_bytes(16)) . '.' . $allowed[$mime];
     $dir = __DIR__ . '/uploads/' . trim($folder, '/');
     if (!is_dir($dir) && !mkdir($dir, 0755, true)) throw new RuntimeException('Unable to create upload directory.');
+    if (trim($folder, '/') === 'receipts' && !is_file($dir . '/.htaccess')) {
+        file_put_contents($dir . '/.htaccess', "Require all denied\n");
+    }
     if (!move_uploaded_file($file['tmp_name'], $dir . '/' . $name)) throw new RuntimeException('Upload failed.');
     return 'uploads/' . trim($folder, '/') . '/' . $name;
 }
@@ -124,6 +127,64 @@ function ensure_event_images_table(): void {
 function ensure_event_tags_column(): void {
     $column = db()->query("SHOW COLUMNS FROM events LIKE 'tags'")->fetch();
     if (!$column) db()->exec("ALTER TABLE events ADD COLUMN tags VARCHAR(500) NULL AFTER description");
+}
+function ensure_booking_schema(): void {
+    $eventColumns = [
+        'booking_enabled' => "TINYINT(1) NOT NULL DEFAULT 0 AFTER registration_url",
+        'pricing_type' => "ENUM('free','paid') NOT NULL DEFAULT 'free' AFTER booking_enabled",
+        'member_price' => "DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER pricing_type",
+        'non_member_price' => "DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER member_price",
+        'currency' => "CHAR(3) NOT NULL DEFAULT 'LKR' AFTER non_member_price",
+        'capacity' => "INT UNSIGNED NULL AFTER currency",
+        'bank_transfer_enabled' => "TINYINT(1) NOT NULL DEFAULT 1 AFTER capacity",
+        'bank_details' => "TEXT NULL AFTER bank_transfer_enabled",
+    ];
+    foreach ($eventColumns as $name => $definition) {
+        if (!db()->query("SHOW COLUMNS FROM events LIKE " . db()->quote($name))->fetch()) {
+            db()->exec("ALTER TABLE events ADD COLUMN $name $definition");
+        }
+    }
+    db()->exec("CREATE TABLE IF NOT EXISTS event_bookings (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        reference VARCHAR(24) NOT NULL UNIQUE,
+        event_id INT UNSIGNED NOT NULL,
+        purchaser_name VARCHAR(160) NOT NULL,
+        purchaser_email VARCHAR(190) NOT NULL,
+        purchaser_phone VARCHAR(40) NOT NULL,
+        organisation VARCHAR(190) NULL,
+        designation VARCHAR(160) NULL,
+        seats SMALLINT UNSIGNED NOT NULL,
+        subtotal DECIMAL(10,2) NOT NULL DEFAULT 0,
+        currency CHAR(3) NOT NULL DEFAULT 'LKR',
+        payment_method ENUM('free','bank_transfer') NOT NULL,
+        receipt_path VARCHAR(255) NULL,
+        status ENUM('pending_receipt','pending_verification','confirmed','rejected','cancelled') NOT NULL,
+        admin_notes TEXT NULL,
+        source_ip_hash CHAR(64) NULL,
+        verified_by INT UNSIGNED NULL,
+        verified_at DATETIME NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_booking_event (event_id, status),
+        INDEX idx_booking_status (status, created_at),
+        CONSTRAINT fk_booking_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE RESTRICT,
+        CONSTRAINT fk_booking_admin FOREIGN KEY (verified_by) REFERENCES admins(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    db()->exec("CREATE TABLE IF NOT EXISTS event_booking_participants (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        booking_id INT UNSIGNED NOT NULL,
+        name VARCHAR(160) NOT NULL,
+        email VARCHAR(190) NOT NULL,
+        phone VARCHAR(40) NULL,
+        organisation VARCHAR(190) NULL,
+        designation VARCHAR(160) NULL,
+        attendee_type ENUM('member','non_member') NOT NULL DEFAULT 'non_member',
+        membership_number VARCHAR(80) NULL,
+        unit_price DECIMAL(10,2) NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_participant_booking (booking_id),
+        CONSTRAINT fk_participant_booking FOREIGN KEY (booking_id) REFERENCES event_bookings(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 function event_images(int $eventId): array {
     ensure_event_images_table();
