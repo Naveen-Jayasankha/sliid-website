@@ -32,6 +32,12 @@ function rate_limit_submissions(): void {
     $stmt->execute([$hash, $hash]);
     if ((int)$stmt->fetchColumn() >= 8) json_response(['ok'=>false,'message'=>'Too many submissions. Please try again later.'], 429);
 }
+function rate_limit_bookings(): void {
+    ensure_booking_schema();
+    $stmt=db()->prepare("SELECT COUNT(*) FROM event_bookings WHERE source_ip_hash=? AND created_at>DATE_SUB(NOW(),INTERVAL 1 HOUR)");
+    $stmt->execute([client_hash()]);
+    if((int)$stmt->fetchColumn()>=5)json_response(['ok'=>false,'message'=>'Too many booking attempts. Please try again later.'],429);
+}
 
 try {
     if ($resource === 'health' && $method === 'GET') {
@@ -54,9 +60,32 @@ try {
         $count=db()->query("SELECT COUNT(*) FROM news WHERE $where")->fetchColumn();$stmt=db()->query("SELECT id,title,slug,excerpt,category,image_path,published_at FROM news WHERE $where ORDER BY published_at DESC,created_at DESC LIMIT $limit OFFSET $offset");$rows=$stmt->fetchAll();foreach($rows as &$row)$row['image_url']=public_url($row['image_path']);json_response(['ok'=>true,'data'=>$rows,'pagination'=>['page'=>$page,'limit'=>$limit,'total'=>(int)$count]]);
     }
     if ($resource === 'events' && $method === 'GET') {
-        ensure_event_images_table();ensure_event_tags_column();[$page,$limit,$offset]=page_args();$past=($_GET['past']??'0')==='1';$date=$past?'starts_at<NOW()':'starts_at>=NOW()';$order=$past?'DESC':'ASC';$count=db()->query("SELECT COUNT(*) FROM events WHERE status='published' AND $date")->fetchColumn();$stmt=db()->query("SELECT id,title,slug,summary,description,tags,venue,starts_at,ends_at,registration_url,image_path,featured FROM events WHERE status='published' AND $date ORDER BY featured DESC,starts_at $order LIMIT $limit OFFSET $offset");$rows=$stmt->fetchAll();
+        ensure_event_images_table();ensure_event_tags_column();ensure_booking_schema();[$page,$limit,$offset]=page_args();$past=($_GET['past']??'0')==='1';$date=$past?'starts_at<NOW()':'starts_at>=NOW()';$order=$past?'DESC':'ASC';$count=db()->query("SELECT COUNT(*) FROM events WHERE status='published' AND $date")->fetchColumn();$stmt=db()->query("SELECT id,title,slug,summary,description,tags,venue,starts_at,ends_at,registration_url,booking_enabled,pricing_type,member_price,non_member_price,currency,capacity,bank_transfer_enabled,bank_details,image_path,featured FROM events WHERE status='published' AND $date ORDER BY featured DESC,starts_at $order LIMIT $limit OFFSET $offset");$rows=$stmt->fetchAll();
         $galleries=[];if($rows){$ids=array_column($rows,'id');$marks=implode(',',array_fill(0,count($ids),'?'));$galleryStmt=db()->prepare("SELECT event_id,image_path FROM event_images WHERE event_id IN ($marks) ORDER BY sort_order,id");$galleryStmt->execute($ids);foreach($galleryStmt->fetchAll() as $image)$galleries[(int)$image['event_id']][]=public_url($image['image_path']);}
         foreach($rows as &$row){$row['image_url']=public_url($row['image_path']);$row['gallery_images']=$galleries[(int)$row['id']]??[];}json_response(['ok'=>true,'data'=>$rows,'pagination'=>['page'=>$page,'limit'=>$limit,'total'=>(int)$count]]);
+    }
+    if ($resource === 'event-bookings' && $method === 'POST') {
+        rate_limit_bookings();$data=$_POST ?: json_input();required($data,['event_id','purchaser_name','purchaser_email','purchaser_phone','participants']);
+        if(!filter_var($data['purchaser_email'],FILTER_VALIDATE_EMAIL))json_response(['ok'=>false,'message'=>'Enter a valid purchaser email address.'],422);
+        $participants=json_decode((string)$data['participants'],true);if(!is_array($participants)||count($participants)<1||count($participants)>10)json_response(['ok'=>false,'message'=>'Add between 1 and 10 participants.'],422);
+        $eventId=(int)$data['event_id'];$eventStmt=db()->prepare("SELECT * FROM events WHERE id=? AND status='published' AND booking_enabled=1 AND starts_at>=NOW() LIMIT 1");$eventStmt->execute([$eventId]);$event=$eventStmt->fetch();if(!$event)json_response(['ok'=>false,'message'=>'This event is not currently accepting bookings.'],404);
+        $normalised=[];$total=0.0;foreach($participants as $participant){
+            $name=trim((string)($participant['name']??''));$email=strtolower(trim((string)($participant['email']??'')));$type=($participant['attendee_type']??'non_member')==='member'?'member':'non_member';$number=trim((string)($participant['membership_number']??''));
+            if($name===''||!filter_var($email,FILTER_VALIDATE_EMAIL))json_response(['ok'=>false,'message'=>'Each participant needs a name and valid email.'],422);
+            if($type==='member'&&$number==='')json_response(['ok'=>false,'message'=>'Enter the membership number for each member participant.'],422);
+            $price=$event['pricing_type']==='free'?0.0:(float)($type==='member'?$event['member_price']:$event['non_member_price']);$total+=$price;
+            $normalised[]=['name'=>$name,'email'=>$email,'phone'=>trim((string)($participant['phone']??'')),'organisation'=>trim((string)($participant['organisation']??'')),'designation'=>trim((string)($participant['designation']??'')),'attendee_type'=>$type,'membership_number'=>$number,'unit_price'=>$price];
+        }
+        if(!empty($event['capacity'])){$reservedStmt=db()->prepare("SELECT COALESCE(SUM(seats),0) FROM event_bookings WHERE event_id=? AND status NOT IN ('rejected','cancelled')");$reservedStmt->execute([$eventId]);if((int)$reservedStmt->fetchColumn()+count($normalised)>(int)$event['capacity'])json_response(['ok'=>false,'message'=>'There are not enough seats remaining for this booking.'],409);}
+        $isFree=$event['pricing_type']==='free'||$total<=0;$method=$isFree?'free':'bank_transfer';
+        if(!$isFree&&!$event['bank_transfer_enabled'])json_response(['ok'=>false,'message'=>'Online payment is not yet available for this event. Please contact SLIID.'],422);
+        $receipt=null;if(!$isFree){$receipt=upload_file('receipt',['application/pdf'=>'pdf'],'receipts');if(!$receipt)json_response(['ok'=>false,'message'=>'Upload the bank transfer receipt as a PDF.'],422);}
+        $reference='SLIID-'.date('ymd').'-'.strtoupper(bin2hex(random_bytes(3)));$status=$isFree?'confirmed':'pending_verification';
+        db()->beginTransaction();try{
+            $stmt=db()->prepare('INSERT INTO event_bookings(reference,event_id,purchaser_name,purchaser_email,purchaser_phone,organisation,designation,seats,subtotal,currency,payment_method,receipt_path,status,source_ip_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)');$stmt->execute([$reference,$eventId,trim($data['purchaser_name']),strtolower(trim($data['purchaser_email'])),trim($data['purchaser_phone']),trim((string)($data['organisation']??'')),trim((string)($data['designation']??'')),count($normalised),$total,$event['currency'],$method,$receipt,$status,client_hash()]);$bookingId=(int)db()->lastInsertId();
+            $participantStmt=db()->prepare('INSERT INTO event_booking_participants(booking_id,name,email,phone,organisation,designation,attendee_type,membership_number,unit_price) VALUES(?,?,?,?,?,?,?,?,?)');foreach($normalised as $participant)$participantStmt->execute([$bookingId,$participant['name'],$participant['email'],$participant['phone'],$participant['organisation'],$participant['designation'],$participant['attendee_type'],$participant['membership_number'],$participant['unit_price']]);db()->commit();
+        }catch(Throwable $e){db()->rollBack();throw $e;}
+        json_response(['ok'=>true,'message'=>$isFree?'Your booking is confirmed.':'Your receipt has been submitted for verification.','reference'=>$reference,'status'=>$status,'amount'=>$total,'currency'=>$event['currency']],201);
     }
     if ($resource === 'publications' && $method === 'GET') {
         [$page,$limit,$offset]=page_args();$count=db()->query("SELECT COUNT(*) FROM publications WHERE status='published'")->fetchColumn();$stmt=db()->query("SELECT id,title,description,category,file_path,external_url,published_at FROM publications WHERE status='published' ORDER BY published_at DESC,created_at DESC LIMIT $limit OFFSET $offset");$rows=$stmt->fetchAll();foreach($rows as &$row)$row['file_url']=public_url($row['file_path']);json_response(['ok'=>true,'data'=>$rows,'pagination'=>['page'=>$page,'limit'=>$limit,'total'=>(int)$count]]);
