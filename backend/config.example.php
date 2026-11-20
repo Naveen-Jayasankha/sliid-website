@@ -14,8 +14,8 @@ return [
     ],
     'cors_origins' => [
         'https://naveen-jayasankha.github.io',
-        'https://www.sliid.lk',
-        'https://sliid.lk',
+        'https://www.sliid.org',
+        'https://sliid.org',
     ],
     'upload_max_bytes' => 5242880,
 ];
