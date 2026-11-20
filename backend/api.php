@@ -2,15 +2,45 @@
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
 
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowed = $config['cors_origins'] ?? [];
-if ($origin && in_array($origin, $allowed, true)) {
-    header('Access-Control-Allow-Origin: ' . $origin);
+$origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
+
+function normalise_origin(string $value): string {
+    $value = rtrim(trim($value), '/');
+    $parts = parse_url($value);
+    if (!$parts || empty($parts['scheme']) || empty($parts['host'])) return '';
+    $scheme = strtolower((string)$parts['scheme']);
+    $host = strtolower((string)$parts['host']);
+    $port = isset($parts['port']) ? ':' . (int)$parts['port'] : '';
+    return $scheme . '://' . $host . $port;
+}
+
+$allowed = is_array($config['cors_origins'] ?? null) ? $config['cors_origins'] : [];
+$appOrigin = normalise_origin((string)($config['app_url'] ?? ''));
+if ($appOrigin !== '') {
+    $allowed[] = $appOrigin;
+    $parts = parse_url($appOrigin);
+    $host = strtolower((string)($parts['host'] ?? ''));
+    $scheme = strtolower((string)($parts['scheme'] ?? 'https'));
+    $port = isset($parts['port']) ? ':' . (int)$parts['port'] : '';
+    if ($host !== '') {
+        $alternateHost = str_starts_with($host, 'www.') ? substr($host, 4) : 'www.' . $host;
+        $allowed[] = $scheme . '://' . $alternateHost . $port;
+    }
+}
+$allowed = array_values(array_unique(array_filter(array_map('normalise_origin', $allowed))));
+$normalisedOrigin = normalise_origin($origin);
+$originAllowed = $normalisedOrigin !== '' && in_array($normalisedOrigin, $allowed, true);
+
+if ($origin && $originAllowed) {
+    header('Access-Control-Allow-Origin: ' . $normalisedOrigin);
     header('Vary: Origin');
     header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type');
 }
-if ($origin && !in_array($origin, $allowed, true)) json_response(['ok'=>false,'message'=>'Origin not allowed.'], 403);
+if ($origin && !$originAllowed) {
+    error_log('Blocked CORS origin: ' . $origin);
+    json_response(['ok'=>false,'message'=>'Origin not allowed.'], 403);
+}
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 header('Cache-Control: no-store');
 
