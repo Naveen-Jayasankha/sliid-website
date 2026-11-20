@@ -1,0 +1,8 @@
+RewriteEngine On
+
+# Keep one secure, canonical origin for the website and backend API.
+RewriteCond %{HTTPS} !=on [OR]
+RewriteCond %{HTTP_HOST} ^www\.sliid\.org$ [NC]
+RewriteRule ^ https://sliid.org%{REQUEST_URI} [R=301,L,NE]
+
+Options -Indexes
