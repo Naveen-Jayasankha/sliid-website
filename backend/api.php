@@ -60,8 +60,23 @@ try {
         $count=db()->query("SELECT COUNT(*) FROM news WHERE $where")->fetchColumn();$stmt=db()->query("SELECT id,title,slug,excerpt,category,image_path,published_at FROM news WHERE $where ORDER BY published_at DESC,created_at DESC LIMIT $limit OFFSET $offset");$rows=$stmt->fetchAll();foreach($rows as &$row)$row['image_url']=public_url($row['image_path']);json_response(['ok'=>true,'data'=>$rows,'pagination'=>['page'=>$page,'limit'=>$limit,'total'=>(int)$count]]);
     }
     if ($resource === 'events' && $method === 'GET') {
-        ensure_event_images_table();ensure_event_tags_column();ensure_booking_schema();[$page,$limit,$offset]=page_args();$past=($_GET['past']??'0')==='1';$date=$past?'starts_at<NOW()':'starts_at>=NOW()';$order=$past?'DESC':'ASC';$count=db()->query("SELECT COUNT(*) FROM events WHERE status='published' AND $date")->fetchColumn();$stmt=db()->query("SELECT id,title,slug,summary,description,tags,venue,starts_at,ends_at,registration_url,booking_enabled,pricing_type,member_price,non_member_price,currency,capacity,bank_transfer_enabled,bank_details,image_path,featured FROM events WHERE status='published' AND $date ORDER BY featured DESC,starts_at $order LIMIT $limit OFFSET $offset");$rows=$stmt->fetchAll();
-        $galleries=[];if($rows){$ids=array_column($rows,'id');$marks=implode(',',array_fill(0,count($ids),'?'));$galleryStmt=db()->prepare("SELECT event_id,image_path FROM event_images WHERE event_id IN ($marks) ORDER BY sort_order,id");$galleryStmt->execute($ids);foreach($galleryStmt->fetchAll() as $image)$galleries[(int)$image['event_id']][]=public_url($image['image_path']);}
+        [$page,$limit,$offset]=page_args();$past=($_GET['past']??'0')==='1';$date=$past?'starts_at<NOW()':'starts_at>=NOW()';$order=$past?'DESC':'ASC';
+        $optionalColumns=[
+            'tags'=>"NULL AS tags",
+            'booking_enabled'=>"0 AS booking_enabled",
+            'pricing_type'=>"'free' AS pricing_type",
+            'member_price'=>"0 AS member_price",
+            'non_member_price'=>"0 AS non_member_price",
+            'currency'=>"'LKR' AS currency",
+            'capacity'=>"NULL AS capacity",
+            'bank_transfer_enabled'=>"0 AS bank_transfer_enabled",
+            'bank_details'=>"NULL AS bank_details",
+        ];
+        $select=['id','title','slug','summary','description','venue','starts_at','ends_at','registration_url','image_path','featured'];
+        foreach($optionalColumns as $column=>$fallback)$select[]=table_has_column('events',$column)?$column:$fallback;
+        $count=db()->query("SELECT COUNT(*) FROM events WHERE status='published' AND $date")->fetchColumn();
+        $stmt=db()->query('SELECT '.implode(',',$select)." FROM events WHERE status='published' AND $date ORDER BY featured DESC,starts_at $order LIMIT $limit OFFSET $offset");$rows=$stmt->fetchAll();
+        $galleries=[];if($rows&&database_has_table('event_images')){$ids=array_column($rows,'id');$marks=implode(',',array_fill(0,count($ids),'?'));$galleryStmt=db()->prepare("SELECT event_id,image_path FROM event_images WHERE event_id IN ($marks) ORDER BY sort_order,id");$galleryStmt->execute($ids);foreach($galleryStmt->fetchAll() as $image)$galleries[(int)$image['event_id']][]=public_url($image['image_path']);}
         foreach($rows as &$row){$row['image_url']=public_url($row['image_path']);$row['gallery_images']=$galleries[(int)$row['id']]??[];}json_response(['ok'=>true,'data'=>$rows,'pagination'=>['page'=>$page,'limit'=>$limit,'total'=>(int)$count]]);
     }
     if ($resource === 'event-bookings' && $method === 'POST') {
