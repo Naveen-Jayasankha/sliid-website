@@ -78,6 +78,29 @@ function audit(string $action, string $entity, ?int $entityId = null, array $det
     $stmt = db()->prepare('INSERT INTO audit_logs(admin_id, action, entity, entity_id, details, ip_address) VALUES(?,?,?,?,?,?)');
     $stmt->execute([$user['id'] ?? null, $action, $entity, $entityId, json_encode($details), $_SERVER['REMOTE_ADDR'] ?? null]);
 }
+function save_image_as_webp(string $source, string $mime, string $destination, int $quality = 82): bool {
+    if (!function_exists('imagewebp')) return false;
+    $image = match ($mime) {
+        'image/jpeg' => function_exists('imagecreatefromjpeg') ? @imagecreatefromjpeg($source) : false,
+        'image/png' => function_exists('imagecreatefrompng') ? @imagecreatefrompng($source) : false,
+        'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($source) : false,
+        default => false,
+    };
+    if (!$image) return false;
+    if ($mime === 'image/png' || $mime === 'image/webp') {
+        imagepalettetotruecolor($image);
+        imagealphablending($image, true);
+        imagesavealpha($image, true);
+    }
+    $saved = @imagewebp($image, $destination, max(1, min(100, $quality)));
+    imagedestroy($image);
+    if (!$saved || !is_file($destination) || filesize($destination) === 0) {
+        @unlink($destination);
+        return false;
+    }
+    @chmod($destination, 0644);
+    return true;
+}
 function upload_file(string $field, array $allowed, string $folder): ?string {
     global $config;
     if (empty($_FILES[$field]['name'])) return null;
@@ -85,13 +108,21 @@ function upload_file(string $field, array $allowed, string $folder): ?string {
     if ($file['error'] !== UPLOAD_ERR_OK || $file['size'] > ($config['upload_max_bytes'] ?? 5242880)) throw new RuntimeException('Invalid or oversized upload.');
     $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
     if (!isset($allowed[$mime])) throw new RuntimeException('Unsupported file type.');
-    $name = bin2hex(random_bytes(16)) . '.' . $allowed[$mime];
+    $stem = bin2hex(random_bytes(16));
+    $name = $stem . '.' . $allowed[$mime];
     $dir = __DIR__ . '/uploads/' . trim($folder, '/');
     if (!is_dir($dir) && !mkdir($dir, 0755, true)) throw new RuntimeException('Unable to create upload directory.');
     if (trim($folder, '/') === 'receipts' && !is_file($dir . '/.htaccess')) {
         file_put_contents($dir . '/.htaccess', "Require all denied\n");
     }
+    if (trim($folder, '/') === 'images' && in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+        $webpName = $stem . '.webp';
+        if (save_image_as_webp($file['tmp_name'], $mime, $dir . '/' . $webpName)) {
+            return 'uploads/' . trim($folder, '/') . '/' . $webpName;
+        }
+    }
     if (!move_uploaded_file($file['tmp_name'], $dir . '/' . $name)) throw new RuntimeException('Upload failed.');
+    @chmod($dir . '/' . $name, 0644);
     return 'uploads/' . trim($folder, '/') . '/' . $name;
 }
 function upload_files(string $field, array $allowed, string $folder, int $maximum = 12): array {
@@ -207,8 +238,8 @@ function event_images(int $eventId): array {
 function public_url(?string $path): ?string {
     global $config;
     if (!$path) return null;
-    if (preg_match('#^uploads/images/([^/]+)$#', ltrim($path, '/'), $match)) {
-        return rtrim($config['app_url'], '/') . '/media.php?file=' . rawurlencode($match[1]);
+    if (preg_match('#^uploads/images/([a-f0-9]{32})\.(?:jpg|png|webp)$#i', ltrim($path, '/'), $match)) {
+        return rtrim($config['app_url'], '/') . '/media.php?file=' . rawurlencode(strtolower($match[1]) . '.webp');
     }
     return rtrim($config['app_url'], '/') . '/' . ltrim($path, '/');
 }
