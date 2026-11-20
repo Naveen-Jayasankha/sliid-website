@@ -211,10 +211,31 @@ function ensure_booking_schema(): void {
         designation VARCHAR(160) NULL,
         attendee_type ENUM('member','non_member') NOT NULL DEFAULT 'non_member',
         membership_number VARCHAR(80) NULL,
+        nic VARCHAR(24) NULL,
         unit_price DECIMAL(10,2) NOT NULL DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_participant_booking (booking_id),
         CONSTRAINT fk_participant_booking FOREIGN KEY (booking_id) REFERENCES event_bookings(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    if (!table_has_column('event_booking_participants', 'nic')) {
+        db()->exec("ALTER TABLE event_booking_participants ADD COLUMN nic VARCHAR(24) NULL AFTER membership_number");
+    }
+    db()->exec("CREATE TABLE IF NOT EXISTS event_tickets (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        ticket_number VARCHAR(40) NOT NULL UNIQUE,
+        token CHAR(64) NOT NULL UNIQUE,
+        booking_id INT UNSIGNED NOT NULL,
+        participant_id INT UNSIGNED NOT NULL UNIQUE,
+        status ENUM('issued','checked_in','void') NOT NULL DEFAULT 'issued',
+        checked_in_at DATETIME NULL,
+        checked_in_by INT UNSIGNED NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_ticket_booking (booking_id),
+        INDEX idx_ticket_status (status, checked_in_at),
+        CONSTRAINT fk_ticket_booking FOREIGN KEY (booking_id) REFERENCES event_bookings(id) ON DELETE CASCADE,
+        CONSTRAINT fk_ticket_participant FOREIGN KEY (participant_id) REFERENCES event_booking_participants(id) ON DELETE CASCADE,
+        CONSTRAINT fk_ticket_admin FOREIGN KEY (checked_in_by) REFERENCES admins(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 function database_has_table(string $table): bool {
@@ -242,4 +263,85 @@ function public_url(?string $path): ?string {
         return rtrim($config['app_url'], '/') . '/media.php?file=' . rawurlencode(strtolower($match[1]) . '.webp');
     }
     return rtrim($config['app_url'], '/') . '/' . ltrim($path, '/');
+}
+
+function ticket_url(string $token): string {
+    global $config;
+    return rtrim((string)$config['app_url'], '/') . '/ticket.php?token=' . rawurlencode($token);
+}
+function ticket_validation_url(string $token): string {
+    global $config;
+    return rtrim((string)$config['app_url'], '/') . '/validate.php?token=' . rawurlencode($token);
+}
+function issue_tickets_for_booking(int $bookingId): array {
+    ensure_booking_schema();
+    $bookingStmt = db()->prepare("SELECT id,status FROM event_bookings WHERE id=? LIMIT 1");
+    $bookingStmt->execute([$bookingId]);
+    $booking = $bookingStmt->fetch();
+    if (!$booking || $booking['status'] !== 'confirmed') return [];
+
+    $participantStmt = db()->prepare('SELECT id FROM event_booking_participants WHERE booking_id=? ORDER BY id');
+    $participantStmt->execute([$bookingId]);
+    $participants = $participantStmt->fetchAll();
+    $existingStmt = db()->prepare('SELECT * FROM event_tickets WHERE participant_id=? LIMIT 1');
+    $insertStmt = db()->prepare("INSERT INTO event_tickets(ticket_number,token,booking_id,participant_id,status) VALUES(?,?,?,?,'issued')");
+    $restoreStmt = db()->prepare("UPDATE event_tickets SET status='issued',checked_in_at=NULL,checked_in_by=NULL WHERE id=? AND status='void'");
+    $tickets = [];
+    foreach ($participants as $participant) {
+        $existingStmt->execute([(int)$participant['id']]);
+        $ticket = $existingStmt->fetch();
+        if ($ticket) {
+            $restoreStmt->execute([(int)$ticket['id']]);
+        } else {
+            do {
+                $number = 'SLIID-' . date('y') . '-T' . strtoupper(bin2hex(random_bytes(4)));
+                $check = db()->prepare('SELECT 1 FROM event_tickets WHERE ticket_number=?');
+                $check->execute([$number]);
+            } while ($check->fetchColumn());
+            $token = bin2hex(random_bytes(32));
+            $insertStmt->execute([$number,$token,$bookingId,(int)$participant['id']]);
+        }
+    }
+    $ticketStmt = db()->prepare('SELECT t.*,p.name,p.email,p.attendee_type,p.membership_number,p.nic FROM event_tickets t JOIN event_booking_participants p ON p.id=t.participant_id WHERE t.booking_id=? ORDER BY p.id');
+    $ticketStmt->execute([$bookingId]);
+    return $ticketStmt->fetchAll();
+}
+function send_ticket_email(int $bookingId): bool {
+    global $config;
+    $stmt = db()->prepare('SELECT b.reference,b.purchaser_name,b.purchaser_email,e.title,e.starts_at,e.venue FROM event_bookings b JOIN events e ON e.id=b.event_id WHERE b.id=? AND b.status=\'confirmed\' LIMIT 1');
+    $stmt->execute([$bookingId]);
+    $booking = $stmt->fetch();
+    if (!$booking || !filter_var($booking['purchaser_email'], FILTER_VALIDATE_EMAIL)) return false;
+    $tickets = issue_tickets_for_booking($bookingId);
+    if (!$tickets) return false;
+    $host = parse_url((string)($config['app_url'] ?? ''), PHP_URL_HOST) ?: 'sliid.org';
+    $host = preg_replace('/^www\./i', '', (string)$host);
+    $headers = [
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=UTF-8',
+        'From: SLIID Events <no-reply@' . $host . '>',
+        'Reply-To: info@' . $host,
+    ];
+    $eventDate = date('l, F j, Y · g:i A', strtotime($booking['starts_at']));
+    $mailHeaders = implode("\r\n", $headers);
+    $allSent = true;
+    $participantEmails = [];
+    $links = '';
+    foreach ($tickets as $ticket) {
+        $type = $ticket['attendee_type'] === 'member' ? 'SLIID member' : 'Non-member';
+        $button = '<a href="' . e(ticket_url($ticket['token'])) . '" style="background:#ac874b;color:#fff;text-decoration:none;padding:12px 18px;display:inline-block">Open your e-ticket</a>';
+        $personalBody = '<!doctype html><html><body style="margin:0;background:#f4f1eb;font-family:Arial,sans-serif;color:#172733"><div style="max-width:640px;margin:0 auto;padding:28px 16px"><div style="background:#071c29;color:#fff;padding:26px"><div style="font-family:Georgia,serif;font-size:36px">SLIID</div><div style="color:#d6bd85;text-transform:uppercase;letter-spacing:2px;font-size:11px">Official event e-ticket</div></div><div style="background:#fff;padding:26px"><p>Dear ' . e($ticket['name']) . ',</p><p>Your ticket for <strong>' . e($booking['title']) . '</strong> is confirmed.</p><p><strong>' . e($eventDate) . '</strong><br>' . e($booking['venue'] ?: 'Venue to be confirmed') . '</p><p>' . $button . '</p><p style="color:#66737a;font-size:13px">Present the QR code on your phone or print the ticket. Ticket number: <strong>' . e($ticket['ticket_number']) . '</strong></p></div></div></body></html>';
+        $recipient = strtolower((string)$ticket['email']);
+        if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+            $participantEmails[] = $recipient;
+            $allSent = @mail($recipient, 'Your SLIID e-ticket - ' . $booking['title'], $personalBody, $mailHeaders) && $allSent;
+        } else $allSent = false;
+        $links .= '<tr><td style="padding:14px;border-bottom:1px solid #e6e0d5"><strong>' . e($ticket['name']) . '</strong><br><span style="color:#66737a">' . e($type) . ' · ' . e($ticket['ticket_number']) . '</span></td><td style="padding:14px;border-bottom:1px solid #e6e0d5;text-align:right"><a href="' . e(ticket_url($ticket['token'])) . '" style="background:#ac874b;color:#fff;text-decoration:none;padding:10px 14px;display:inline-block">Open e-ticket</a></td></tr>';
+    }
+    $purchaserEmail = strtolower((string)$booking['purchaser_email']);
+    if (count($tickets) > 1 || !in_array($purchaserEmail, $participantEmails, true)) {
+        $summaryBody = '<!doctype html><html><body style="margin:0;background:#f4f1eb;font-family:Arial,sans-serif;color:#172733"><div style="max-width:680px;margin:0 auto;padding:28px 16px"><div style="background:#071c29;color:#fff;padding:26px"><div style="font-family:Georgia,serif;font-size:36px">SLIID</div><div style="color:#d6bd85;text-transform:uppercase;letter-spacing:2px;font-size:11px">Booking confirmed</div></div><div style="background:#fff;padding:26px"><p>Dear ' . e($booking['purchaser_name']) . ',</p><p>All tickets for <strong>' . e($booking['title']) . '</strong> are ready.</p><p><strong>' . e($eventDate) . '</strong><br>' . e($booking['venue'] ?: 'Venue to be confirmed') . '</p><table style="width:100%;border-collapse:collapse">' . $links . '</table><p style="color:#66737a;font-size:13px;margin-top:24px">Each attendee has also been sent their individual ticket.</p><p style="font-size:12px;color:#879198">Booking reference: ' . e($booking['reference']) . '</p></div></div></body></html>';
+        $allSent = @mail($purchaserEmail, 'Your SLIID booking is confirmed - ' . $booking['title'], $summaryBody, $mailHeaders) && $allSent;
+    }
+    return $allSent;
 }
