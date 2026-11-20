@@ -186,6 +186,18 @@ function ensure_booking_schema(): void {
         CONSTRAINT fk_participant_booking FOREIGN KEY (booking_id) REFERENCES event_bookings(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
+function database_has_table(string $table): bool {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) return false;
+    $stmt = db()->prepare('SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=? LIMIT 1');
+    $stmt->execute([$table]);
+    return (bool) $stmt->fetchColumn();
+}
+function table_has_column(string $table, string $column): bool {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table) || !preg_match('/^[A-Za-z0-9_]+$/', $column)) return false;
+    $stmt = db()->prepare('SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=? LIMIT 1');
+    $stmt->execute([$table, $column]);
+    return (bool) $stmt->fetchColumn();
+}
 function event_images(int $eventId): array {
     ensure_event_images_table();
     $stmt = db()->prepare('SELECT id,image_path,sort_order FROM event_images WHERE event_id=? ORDER BY sort_order,id');
