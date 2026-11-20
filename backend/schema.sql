@@ -107,10 +107,29 @@ CREATE TABLE IF NOT EXISTS event_booking_participants (
   designation VARCHAR(160) NULL,
   attendee_type ENUM('member','non_member') NOT NULL DEFAULT 'non_member',
   membership_number VARCHAR(80) NULL,
+  nic VARCHAR(24) NULL,
   unit_price DECIMAL(10,2) NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_participant_booking (booking_id),
   CONSTRAINT fk_participant_booking FOREIGN KEY (booking_id) REFERENCES event_bookings(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS event_tickets (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  ticket_number VARCHAR(40) NOT NULL UNIQUE,
+  token CHAR(64) NOT NULL UNIQUE,
+  booking_id INT UNSIGNED NOT NULL,
+  participant_id INT UNSIGNED NOT NULL UNIQUE,
+  status ENUM('issued','checked_in','void') NOT NULL DEFAULT 'issued',
+  checked_in_at DATETIME NULL,
+  checked_in_by INT UNSIGNED NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_ticket_booking (booking_id),
+  INDEX idx_ticket_status (status, checked_in_at),
+  CONSTRAINT fk_ticket_booking FOREIGN KEY (booking_id) REFERENCES event_bookings(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ticket_participant FOREIGN KEY (participant_id) REFERENCES event_booking_participants(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ticket_admin FOREIGN KEY (checked_in_by) REFERENCES admins(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS event_images (
