@@ -207,5 +207,8 @@ function event_images(int $eventId): array {
 function public_url(?string $path): ?string {
     global $config;
     if (!$path) return null;
+    if (preg_match('#^uploads/images/([^/]+)$#', ltrim($path, '/'), $match)) {
+        return rtrim($config['app_url'], '/') . '/media.php?file=' . rawurlencode($match[1]);
+    }
     return rtrim($config['app_url'], '/') . '/' . ltrim($path, '/');
 }
