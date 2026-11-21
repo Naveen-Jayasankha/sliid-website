@@ -306,6 +306,47 @@ function issue_tickets_for_booking(int $bookingId): array {
     $ticketStmt->execute([$bookingId]);
     return $ticketStmt->fetchAll();
 }
+function send_html_email(string $recipient, string $subject, string $body): bool {
+    global $config;
+    if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) return false;
+    $mailConfig = is_array($config['mail'] ?? null) ? $config['mail'] : [];
+    if (!empty($mailConfig['enabled'])) {
+        try {
+            require_once __DIR__ . '/vendor/phpmailer/Exception.php';
+            require_once __DIR__ . '/vendor/phpmailer/PHPMailer.php';
+            require_once __DIR__ . '/vendor/phpmailer/SMTP.php';
+            $mailer = new \PHPMailer\PHPMailer\PHPMailer(true);
+            $mailer->CharSet = 'UTF-8';
+            $mailer->isSMTP();
+            $mailer->Host = trim((string)($mailConfig['host'] ?? 'mail.sliid.org'));
+            $mailer->Port = (int)($mailConfig['port'] ?? 465);
+            $mailer->SMTPAuth = true;
+            $mailer->Username = trim((string)($mailConfig['username'] ?? ''));
+            $mailer->Password = (string)($mailConfig['password'] ?? '');
+            $encryption = strtolower(trim((string)($mailConfig['encryption'] ?? 'ssl')));
+            if ($encryption === 'ssl' || $encryption === 'smtps') $mailer->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+            elseif ($encryption === 'tls' || $encryption === 'starttls') $mailer->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            else $mailer->SMTPSecure = '';
+            $from = trim((string)($mailConfig['from_email'] ?? $mailer->Username));
+            $mailer->setFrom($from, trim((string)($mailConfig['from_name'] ?? 'SLIID Events')));
+            $replyTo = trim((string)($mailConfig['reply_to'] ?? $from));
+            if (filter_var($replyTo, FILTER_VALIDATE_EMAIL)) $mailer->addReplyTo($replyTo, 'SLIID Events');
+            $mailer->addAddress($recipient);
+            $mailer->isHTML(true);
+            $mailer->Subject = $subject;
+            $mailer->Body = $body;
+            $mailer->AltBody = trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($body), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            return $mailer->send();
+        } catch (Throwable $error) {
+            error_log('SLIID SMTP delivery failed: ' . $error->getMessage());
+            return false;
+        }
+    }
+    $host = parse_url((string)($config['app_url'] ?? ''), PHP_URL_HOST) ?: 'sliid.org';
+    $host = preg_replace('/^www\./i', '', (string)$host);
+    $headers = ['MIME-Version: 1.0','Content-Type: text/html; charset=UTF-8','From: SLIID Events <no-reply@'.$host.'>','Reply-To: info@'.$host];
+    return @mail($recipient, $subject, $body, implode("\r\n", $headers));
+}
 function send_ticket_email(int $bookingId): bool {
     global $config;
     $stmt = db()->prepare('SELECT b.reference,b.purchaser_name,b.purchaser_email,e.title,e.starts_at,e.venue FROM event_bookings b JOIN events e ON e.id=b.event_id WHERE b.id=? AND b.status=\'confirmed\' LIMIT 1');
@@ -314,16 +355,7 @@ function send_ticket_email(int $bookingId): bool {
     if (!$booking || !filter_var($booking['purchaser_email'], FILTER_VALIDATE_EMAIL)) return false;
     $tickets = issue_tickets_for_booking($bookingId);
     if (!$tickets) return false;
-    $host = parse_url((string)($config['app_url'] ?? ''), PHP_URL_HOST) ?: 'sliid.org';
-    $host = preg_replace('/^www\./i', '', (string)$host);
-    $headers = [
-        'MIME-Version: 1.0',
-        'Content-Type: text/html; charset=UTF-8',
-        'From: SLIID Events <no-reply@' . $host . '>',
-        'Reply-To: info@' . $host,
-    ];
     $eventDate = date('l, F j, Y · g:i A', strtotime($booking['starts_at']));
-    $mailHeaders = implode("\r\n", $headers);
     $allSent = true;
     $participantEmails = [];
     $links = '';
@@ -334,14 +366,14 @@ function send_ticket_email(int $bookingId): bool {
         $recipient = strtolower((string)$ticket['email']);
         if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
             $participantEmails[] = $recipient;
-            $allSent = @mail($recipient, 'Your SLIID e-ticket - ' . $booking['title'], $personalBody, $mailHeaders) && $allSent;
+            $allSent = send_html_email($recipient, 'Your SLIID e-ticket - ' . $booking['title'], $personalBody) && $allSent;
         } else $allSent = false;
         $links .= '<tr><td style="padding:14px;border-bottom:1px solid #e6e0d5"><strong>' . e($ticket['name']) . '</strong><br><span style="color:#66737a">' . e($type) . ' · ' . e($ticket['ticket_number']) . '</span></td><td style="padding:14px;border-bottom:1px solid #e6e0d5;text-align:right"><a href="' . e(ticket_url($ticket['token'])) . '" style="background:#ac874b;color:#fff;text-decoration:none;padding:10px 14px;display:inline-block">Open e-ticket</a></td></tr>';
     }
     $purchaserEmail = strtolower((string)$booking['purchaser_email']);
     if (count($tickets) > 1 || !in_array($purchaserEmail, $participantEmails, true)) {
         $summaryBody = '<!doctype html><html><body style="margin:0;background:#f4f1eb;font-family:Arial,sans-serif;color:#172733"><div style="max-width:680px;margin:0 auto;padding:28px 16px"><div style="background:#071c29;color:#fff;padding:26px"><div style="font-family:Georgia,serif;font-size:36px">SLIID</div><div style="color:#d6bd85;text-transform:uppercase;letter-spacing:2px;font-size:11px">Booking confirmed</div></div><div style="background:#fff;padding:26px"><p>Dear ' . e($booking['purchaser_name']) . ',</p><p>All tickets for <strong>' . e($booking['title']) . '</strong> are ready.</p><p><strong>' . e($eventDate) . '</strong><br>' . e($booking['venue'] ?: 'Venue to be confirmed') . '</p><table style="width:100%;border-collapse:collapse">' . $links . '</table><p style="color:#66737a;font-size:13px;margin-top:24px">Each attendee has also been sent their individual ticket.</p><p style="font-size:12px;color:#879198">Booking reference: ' . e($booking['reference']) . '</p></div></div></body></html>';
-        $allSent = @mail($purchaserEmail, 'Your SLIID booking is confirmed - ' . $booking['title'], $summaryBody, $mailHeaders) && $allSent;
+        $allSent = send_html_email($purchaserEmail, 'Your SLIID booking is confirmed - ' . $booking['title'], $summaryBody) && $allSent;
     }
     return $allSent;
 }
