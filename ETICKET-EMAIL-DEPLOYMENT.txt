@@ -1,0 +1,40 @@
+SLIID E-TICKET + SMTP DEPLOYMENT
+================================
+
+1. Upload this ZIP to public_html and extract it there.
+2. Confirm these URLs no longer return 404:
+   https://sliid.org/backend/validate.php
+   https://sliid.org/backend/ticket.php
+3. Sign in to https://sliid.org/backend/admin.php
+   The menu will contain "Validate tickets" and "Email delivery".
+4. In cPanel > Email Accounts, create events@sliid.org.
+5. In cPanel, open "Connect Devices" for that mailbox and note the exact
+   outgoing SMTP server, port and encryption setting.
+6. Edit public_html/backend/config.php. Add this block before
+   'upload_max_bytes':
+
+  'mail' => array (
+    'enabled' => true,
+    'host' => 'OUTGOING-SERVER-FROM-CPANEL',
+    'port' => 465,
+    'encryption' => 'ssl',
+    'username' => 'events@sliid.org',
+    'password' => 'MAILBOX-PASSWORD',
+    'from_email' => 'events@sliid.org',
+    'from_name' => 'SLIID Events',
+    'reply_to' => 'events@sliid.org',
+  ),
+
+   Use port 587 and encryption 'tls' only when cPanel's Connect Devices page
+   specifically shows STARTTLS/TLS instead of SSL port 465.
+
+7. Save config.php, open Admin > Email delivery and send a test email.
+8. For an already confirmed booking, click "Resend e-tickets" to generate and
+   deliver its tickets. New paid bookings generate tickets when approved.
+
+SECURITY
+--------
+- Do not send the mailbox password in chat or email.
+- config.php is protected by backend/.htaccess and must remain server-only.
+- If the test fails, keep SMTP enabled and verify the exact server name,
+  password, port and encryption shown by cPanel.
