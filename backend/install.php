@@ -26,7 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $config = [
             'app_name' => 'SLIID Administration', 'app_url' => rtrim($_POST['app_url'], '/'),
             'timezone' => 'Asia/Colombo', 'debug' => false, 'database' => $db,
-            'cors_origins' => $origins, 'upload_max_bytes' => 5242880,
+            'cors_origins' => $origins,
+            'mail' => ['enabled'=>false,'host'=>'mail.sliid.org','port'=>465,'encryption'=>'ssl','username'=>'events@sliid.org','password'=>'','from_email'=>'events@sliid.org','from_name'=>'SLIID Events','reply_to'=>'events@sliid.org'],
+            'upload_max_bytes' => 5242880,
         ];
         $written = file_put_contents(__DIR__ . '/config.php', "<?php\nreturn " . var_export($config, true) . ";\n", LOCK_EX);
         if (!$written) throw new RuntimeException('Could not write config.php. Check folder permissions.');
