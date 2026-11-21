@@ -17,5 +17,16 @@ return [
         'https://www.sliid.org',
         'https://sliid.org',
     ],
+    'mail' => [
+        'enabled' => false,
+        'host' => 'mail.sliid.org',
+        'port' => 465,
+        'encryption' => 'ssl',
+        'username' => 'events@sliid.org',
+        'password' => 'enter-the-mailbox-password',
+        'from_email' => 'events@sliid.org',
+        'from_name' => 'SLIID Events',
+        'reply_to' => 'events@sliid.org',
+    ],
     'upload_max_bytes' => 5242880,
 ];
