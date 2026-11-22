@@ -42,6 +42,13 @@ jobs:
           base64 --decode android-admin/app/src/main/res/raw/sliid_alert.wav.b64 > android-admin/app/src/main/res/raw/sliid_alert.wav
           rm android-admin/app/src/main/res/raw/sliid_alert.wav.b64
 
+      - name: Restore launcher icons
+        run: |
+          base64 --decode android-admin/app/src/main/res/mipmap-nodpi/ic_launcher.png.b64 > android-admin/app/src/main/res/mipmap-nodpi/ic_launcher.png
+          rm android-admin/app/src/main/res/mipmap-nodpi/ic_launcher.png.b64
+          base64 --decode android-admin/app/src/main/res/drawable-nodpi/ic_launcher_foreground.png.b64 > android-admin/app/src/main/res/drawable-nodpi/ic_launcher_foreground.png
+          rm android-admin/app/src/main/res/drawable-nodpi/ic_launcher_foreground.png.b64
+
       - name: Build debug APK
         run: gradle --no-daemon -p android-admin assembleDebug
 
