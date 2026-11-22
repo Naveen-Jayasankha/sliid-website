@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "449306880023",
+    "project_id": "sliid-admin",
+    "storage_bucket": "sliid-admin.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:449306880023:android:ea8b40e38036a465c8d452",
+        "android_client_info": {
+          "package_name": "org.sliid.admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCNzE1PX6yD4lbGcOxYpCl25Lha89-lANE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
