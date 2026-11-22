@@ -40,6 +40,7 @@ jobs:
       - name: Restore notification sound
         run: |
           base64 --decode android-admin/app/src/main/res/raw/sliid_alert.wav.b64 > android-admin/app/src/main/res/raw/sliid_alert.wav
+          rm android-admin/app/src/main/res/raw/sliid_alert.wav.b64
 
       - name: Build debug APK
         run: gradle --no-daemon -p android-admin assembleDebug
