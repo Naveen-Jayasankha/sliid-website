@@ -7,6 +7,8 @@
     <application
         android:name=".SliidAdminApp"
         android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false"
         android:label="SLIID Admin"
         android:theme="@style/Theme.SLIIDAdmin">
