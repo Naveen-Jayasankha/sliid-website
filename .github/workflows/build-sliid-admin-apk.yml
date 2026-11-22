@@ -7,6 +7,12 @@ on:
     paths:
       - "android-admin/**"
       - ".github/workflows/build-sliid-admin-apk.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "android-admin/**"
+      - ".github/workflows/build-sliid-admin-apk.yml"
   workflow_dispatch:
 
 permissions:
