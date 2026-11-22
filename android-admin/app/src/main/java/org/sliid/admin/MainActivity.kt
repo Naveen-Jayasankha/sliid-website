@@ -46,7 +46,19 @@ class MainActivity : ComponentActivity() {
 @Composable private fun NotificationPermission(){if(Build.VERSION.SDK_INT>=33){val launcher=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){};LaunchedEffect(Unit){launcher.launch(Manifest.permission.POST_NOTIFICATIONS)}}}
 
 @Composable
-private fun SliidTheme(content:@Composable()->Unit){MaterialTheme(colorScheme=lightColorScheme(primary=Navy,secondary=Gold,background=Paper,surface=Color.White,error=Danger),typography=Typography(),content=content)}
+private fun SliidTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = lightColorScheme(
+            primary = Navy,
+            secondary = Gold,
+            background = Paper,
+            surface = Color.White,
+            error = Danger
+        ),
+        typography = Typography(),
+        content = content
+    )
+}
 
 private enum class AdminTab(val label:String){Dashboard("Overview"),Bookings("Bookings"),Scan("Scan")}
 
@@ -85,7 +97,7 @@ private fun BookingDetailScreen(item:BookingDetail,loading:Boolean,onBack:()->Un
 @Composable private fun Detail(label:String,value:String){Text(label.uppercase(),fontSize=10.sp,color=Color.Gray);Text(value.ifBlank{"—"},fontWeight=FontWeight.SemiBold,modifier=Modifier.padding(bottom=10.dp))}
 
 @Composable
-private fun ScanScreen(ticket:TicketDetails?,loading:Boolean,error:String?,message:String?,onScan:(String)->Unit,onCheckIn:()->Unit,onAgain:()->Unit){if(ticket!=null){TicketResult(ticket,loading,message,onCheckIn,onAgain);return};var manual by remember{mutableStateOf("")};Column(Modifier.fillMaxSize()){Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){OutlinedTextField(manual,{manual=it},Modifier.weight(1f),label={Text("Ticket number")},singleLine=true);IconButton(onClick={if(manual.isNotBlank())onScan(manual)}){Icon(Icons.Outlined.Search,"Validate")}};error?.let{Text(it,color=Danger,modifier=Modifier.padding(horizontal=16.dp,vertical=6.dp))};Box(Modifier.weight(1f)){if(loading)CircularProgressIndicator(Modifier.align(Alignment.Center),color=Gold)else TicketScanner(onCode=onScan)}}}
+private fun ScanScreen(ticket:TicketDetails?,loading:Boolean,error:String?,message:String?,onScan:(String)->Unit,onCheckIn:()->Unit,onAgain:()->Unit){if(ticket!=null){TicketResult(ticket,loading,message,onCheckIn,onAgain);return};var manual by remember{mutableStateOf("")};Column(Modifier.fillMaxSize()){Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){OutlinedTextField(manual,{manual=it},Modifier.weight(1f),label={Text("Ticket number")},singleLine=true);IconButton(onClick={if(manual.isNotBlank()){onScan(manual)}}){Icon(Icons.Outlined.Search,"Validate")}};error?.let{Text(it,color=Danger,modifier=Modifier.padding(horizontal=16.dp,vertical=6.dp))};Box(Modifier.weight(1f)){if(loading)CircularProgressIndicator(Modifier.align(Alignment.Center),color=Gold)else TicketScanner(onCode=onScan)}}}
 
 @Composable
 private fun TicketResult(ticket:TicketDetails,loading:Boolean,message:String?,onCheckIn:()->Unit,onAgain:()->Unit){LazyColumn(Modifier.fillMaxSize().padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)){item{Icon(if(ticket.valid)Icons.Outlined.CheckCircle else Icons.Outlined.Cancel,null,Modifier.size(82.dp),tint=if(ticket.valid)Success else Danger);Text(if(ticket.checkedIn)"Already checked in" else if(ticket.valid)"Valid e-ticket" else "Invalid ticket",fontSize=24.sp,fontWeight=FontWeight.Bold);Text(ticket.number,color=Gold,fontWeight=FontWeight.Bold);message?.let{Text(it,color=Success)}};item{Card(Modifier.fillMaxWidth()){Column(Modifier.padding(18.dp)){Text(ticket.attendee,fontSize=25.sp,fontWeight=FontWeight.Bold);Detail("Type",ticket.attendeeType.replace('_',' '));Detail(if(ticket.attendeeType=="member")"Membership number" else "NIC",ticket.identity);Divider();Detail("Event",ticket.event);Detail("Date and time",ticket.date);Detail("Venue",ticket.venue);ticket.checkedInAt?.let{Detail("Checked in",it)}}}};item{if(ticket.valid&&!ticket.checkedIn)Button(onClick=onCheckIn,enabled=!loading,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Success)){Text("Confirm entrance check-in")};OutlinedButton(onClick=onAgain,modifier=Modifier.fillMaxWidth()){Text("Scan another ticket")}}}}
